@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Modello 3D interattivo del telescopio Newton ripiegato 500/3000 su piattaforma equatoriale: puntamento e un'ora di inseguimento.">
+<title>Newton ripiegato 500/3000</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: scena 3D a tutta altezza con pannello di comandi a destra (sotto, sul telefono).
+   Un solo aspetto notturno, voluto: fondo blu-ardesia, accento rosso "torcia da astrofilo", ottone per l'asse polare. */
+:root {
+  --bg: #0c1017;
+  --panel: #131a24;
+  --line: #243041;
+  --fg: #e7eaf0;
+  --muted: #93a0b4;
+  --accent: #ff5d4f;
+  --brass: #e0aa5a;
+  --f-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 14px; }
+.app {
+  height: 100%; display: grid; grid-template-rows: auto 1fr; gap: 12px;
+  padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+}
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+h1 { font-family: var(--f-display); font-weight: 600; font-size: 22px; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); font-size: 13px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; min-height: 0; }
+.stage { position: relative; min-height: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: absolute; left: 12px; top: 12px; display: grid; gap: 6px; pointer-events: none; }
+.chip { background: rgba(12,16,23,.78); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; backdrop-filter: blur(4px); }
+.chip b { font-family: var(--f-mono); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--fg); }
+.chip span { color: var(--muted); font-size: 12px; margin-right: 6px; }
+.chip.big { display: grid; gap: 2px; padding: 10px 14px; }
+.chip.big span { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+.chip.big b { font-size: 34px; line-height: 1.1; color: var(--accent); }
+.chip.big small { color: var(--muted); font-size: 11.5px; }
+.hint { position: absolute; right: 12px; bottom: 10px; color: var(--muted); font-size: 12px; pointer-events: none; }
+.err { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-y: auto; min-height: 0; display: grid; align-content: start; gap: 18px; }
+section h2 { font-family: var(--f-display); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0 0 10px; }
+.row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 10px; margin-bottom: 10px; }
+.row label { font-weight: 500; }
+.row output { font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--fg); }
+input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: inherit; font-size: 13px; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #1a0705; font-weight: 600; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tog { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: pointer; }
+.tog input { accent-color: var(--accent); width: 16px; height: 16px; }
+.note { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 0; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; font-size: 13px; }
+dt { color: var(--muted); }
+dd { margin: 0; font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.foto, .foto body { overflow: hidden; }
+.foto .app { padding: 0; gap: 0; grid-template-rows: 1fr; }
+.foto header, .foto aside, .foto .hud, .foto .hint { display: none; }
+.foto main { grid-template-columns: minmax(0, 1fr); }
+.foto .stage { border: 0; border-radius: 0; }
+@media (max-width: 860px) {
+  .app { height: auto; }
+  main { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 56vh; min-height: 320px; }
+  aside { overflow: visible; }
+  h1 { font-size: 19px; }
+  header p { font-size: 12px; }
+  .hud { left: 8px; top: 8px; gap: 4px; }
+  .chip { padding: 4px 8px; }
+  .chip.big { padding: 6px 10px; }
+  .chip.big b { font-size: 22px; }
+  .chip.big small { display: none; }
+  .hint { right: 8px; bottom: 6px; font-size: 11px; }
+}
+</style>
+<style>body { margin: 0; } [hidden] { display: none !important; }</style>
+</head>
+<body>
+
+
+<div class="app">
+  <header>
+    <h1>Newton ripiegato 500/3000</h1>
+    <p>Dobson a traliccio su piattaforma equatoriale · Meldola (FC), 44,2° N · modello 3D in scala reale dalle tavole</p>
+  </header>
+  <main>
+    <div class="stage" id="stage">
+      <canvas id="c" aria-label="Modello 3D del telescopio"></canvas>
+      <div class="hud">
+        <div class="chip big"><span>Oculare da terra</span><b id="hEye">—</b><small id="hEyeRange">da 0,91 m (orizzonte) a 1,75 m (zenit)</small></div>
+        <div class="chip"><span>Inseguimento</span><b id="hTrack">—</b></div>
+      </div>
+      <div class="hint" id="hint">Trascina per ruotare · rotella o due dita per ingrandire</div>
+    </div>
+    <aside>
+      <section>
+        <h2>Puntamento (Dobson)</h2>
+        <div class="row"><label for="alt">Altezza</label><output id="altV">40°</output>
+          <input id="alt" type="range" min="0" max="90" step="1" value="40"></div>
+        <div class="row"><label for="az">Azimut</label><output id="azV">180° (sud)</output>
+          <input id="az" type="range" min="0" max="359" step="1" value="180"></div>
+      </section>
+      <section>
+        <h2>Inseguimento (piattaforma)</h2>
+        <div class="row"><label for="tm">Tempo dall'avvio</label><output id="tmV">30 min</output>
+          <input id="tm" type="range" min="0" max="60" step="0.5" value="30"></div>
+        <div class="btns">
+          <button class="primary" id="play" type="button">Simula un'ora</button>
+          <button id="reset" type="button">Riporta all'inizio</button>
+        </div>
+        <p class="note" style="margin-top:10px">Un'ora di inseguimento dura 20 secondi. Il piano mobile ruota di 15° attorno all'asse polare e il tubo resta sulla stella, che percorre un arco attorno al polo celeste.</p>
+      </section>
+      <section>
+        <h2>Mostra</h2>
+        <label class="tog"><input type="checkbox" id="tAxis" checked> Asse polare e traccia della stella</label>
+        <label class="tog"><input type="checkbox" id="tSock"> Telo del traliccio</label>
+        <label class="tog"><input type="checkbox" id="tCut"> Spaccato della scatola</label>
+      </section>
+      <section>
+        <h2>Vista</h2>
+        <div class="btns">
+          <button type="button" data-v="tutto">Insieme</button>
+          <button type="button" data-v="oculare">Oculare</button>
+          <button type="button" data-v="ottica">Ottica</button>
+          <button type="button" data-v="piatt">Piattaforma</button>
+          <button type="button" data-v="est">Da est</button>
+        </div>
+        <div class="btns" style="margin-top:8px">
+          <button type="button" id="hq">Alta risoluzione</button>
+          <button type="button" id="fs">Schermo intero</button>
+        </div>
+      </section>
+      <section>
+        <h2>Numeri del progetto</h2>
+        <dl>
+          <dt>Primario</dt><dd>Ø500 · f 3000 · f/6</dd>
+          <dt>Secondario piano</dt><dd>Ø200 a 1900</dd>
+          <dt>Terziario a 45°</dt><dd>100×141 a 1180</dd>
+          <dt>Tubo con paraluce</dt><dd>2260 mm</dd>
+          <dt>Oculare, 0°–90°</dt><dd>0,91–1,75 m</dd>
+          <dt>Newton classico</dt><dd>≈2,8 m allo zenit</dd>
+          <dt>Corsa piattaforma</dt><dd>±7,5° = 60 min</dd>
+          <dt>Masse</dt><dd>Dobson 121 kg</dd>
+        </dl>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script type="application/json" id="geom">{"PY":-13.0,"PZB":545.0,"Z_SEC":1900.0,"Z_TER":1180.0,"R_IN":268.0,"R_OUT":325.0,"T_PLY":18.0,"POST_W":50.0,"POST_D":55.0,"A1":[1020.0,1038.0],"A2":[1240.0,1258.0],"B1":[1900.0,1918.0],"B2":[2040.0,2058.0],"Z_SHADE":[2040.0,2260.0],"Z_VANE_T":1061.2304473782995,"Z_VANE_S":1969.0,"low":[[[239.4,239.4,120.0],[340.8,0.0,1063.0]],[[239.4,239.4,120.0],[0.0,340.8,1063.0]],[[-239.4,239.4,120.0],[0.0,340.8,1063.0]],[[-239.4,239.4,120.0],[-340.8,0.0,1063.0]],[[-239.4,-239.4,120.0],[-340.8,0.0,1063.0]],[[-239.4,-239.4,120.0],[-0.0,-340.8,1063.0]],[[239.4,-239.4,120.0],[-0.0,-340.8,1063.0]],[[239.4,-239.4,120.0],[340.8,0.0,1063.0]]],"up":[[[241.0,241.0,1215.0],[340.8,0.0,1943.0]],[[241.0,241.0,1215.0],[0.0,340.8,1943.0]],[[-241.0,241.0,1215.0],[0.0,340.8,1943.0]],[[-241.0,241.0,1215.0],[-340.8,0.0,1943.0]],[[-241.0,-241.0,1215.0],[-340.8,0.0,1943.0]],[[-241.0,-241.0,1215.0],[-0.0,-340.8,1943.0]],[[241.0,-241.0,1215.0],[-0.0,-340.8,1943.0]],[[241.0,-241.0,1215.0],[340.8,0.0,1943.0]]],"BOX_OUT":303.0,"BOX_IN":285.0,"BOX_H":350.0,"ring":[[-325.1,826.0],[-339.1,809.6],[-352.3,792.6],[-364.5,774.8],[-375.9,756.5],[-386.2,737.6],[-395.6,718.2],[-404.0,698.3],[-411.4,678.1],[-417.7,657.4],[-422.9,636.5],[-427.1,615.4],[-430.1,594.0],[-432.1,572.6],[-433.0,551.0],[-432.7,529.5],[-431.4,508.0],[-428.9,486.5],[-425.4,465.3],[-420.7,444.2],[-415.0,423.4],[-408.3,403.0],[-400.4,382.9],[-391.6,363.2],[-381.8,344.0],[-371.0,325.4],[-359.3,307.3],[-346.6,289.8],[-333.1,273.1],[-318.7,257.0],[-303.5,241.7],[-287.6,227.2],[-270.9,213.5],[-253.5,200.7],[-235.6,188.8],[-217.0,177.9],[-197.9,167.9],[-178.3,158.9],[-158.3,150.9],[-137.9,144.0],[-117.1,138.1],[-96.1,133.3],[-74.9,129.6],[-53.5,127.0],[-32.0,125.4],[-10.4,125.0],[11.1,125.7],[32.6,127.5],[54.0,130.4],[75.2,134.4],[96.1,139.4],[116.8,145.6],[137.1,152.7],[157.0,161.0],[176.5,170.2],[195.5,180.4],[213.9,191.6],[231.8,203.7],[249.0,216.7],[265.5,230.6],[191.6,325.6],[180.1,315.4],[168.0,305.8],[155.5,296.8],[142.6,288.5],[129.2,280.8],[115.5,273.9],[101.4,267.7],[87.0,262.2],[72.4,257.4],[57.5,253.4],[42.4,250.2],[27.2,247.7],[11.9,246.0],[-3.5,245.2],[-18.9,245.1],[-34.2,245.8],[-49.6,247.2],[-64.8,249.5],[-79.9,252.6],[-94.8,256.4],[-109.5,260.9],[-124.0,266.3],[-138.1,272.3],[-151.9,279.1],[-165.4,286.6],[-178.5,294.7],[-191.1,303.6],[-203.2,313.0],[-214.9,323.1],[-226.0,333.7],[-236.6,344.9],[-246.5,356.7],[-255.9,368.9],[-264.6,381.6],[-272.7,394.7],[-280.0,408.3],[-286.7,422.1],[-292.6,436.3],[-297.8,450.8],[-302.3,465.6],[-306.0,480.5],[-308.9,495.6],[-311.1,510.9],[-312.4,526.2],[-313.0,541.6],[-312.8,557.0],[-311.7,572.4],[-310.0,587.7],[-307.4,602.8],[-304.0,617.9],[-299.9,632.7],[-295.0,647.3],[-289.4,661.7],[-283.0,675.7],[-276.0,689.4],[-268.2,702.7],[-259.8,715.6],[-250.7,728.0],[-241.0,740.0],[-325.1,826.0]],"spacer":[[-236.6,344.9],[-226.0,333.7],[-214.9,323.1],[-203.2,313.0],[-191.1,303.6],[-178.5,294.7],[-165.4,286.6],[-151.9,279.1],[-138.1,272.3],[-124.0,266.3],[-109.5,260.9],[-94.8,256.4],[-79.9,252.6],[-64.8,249.5],[-49.6,247.2],[-34.2,245.8],[-18.9,245.1],[-3.5,245.2],[11.9,246.0],[27.2,247.7],[42.4,250.2],[57.5,253.4],[72.4,257.4],[87.0,262.2],[101.4,267.7],[115.5,273.9],[129.2,280.8],[142.6,288.5],[155.5,296.8],[168.0,305.8],[180.1,315.4],[191.6,325.6],[265.5,230.6],[249.0,216.7],[231.8,203.7],[213.9,191.6],[195.5,180.4],[176.5,170.2],[157.0,161.0],[137.1,152.7],[116.8,145.6],[96.1,139.4],[75.2,134.4],[54.0,130.4],[32.6,127.5],[11.1,125.7],[-10.4,125.0],[-32.0,125.4],[-53.5,127.0],[-74.9,129.6],[-96.1,133.3],[-117.1,138.1],[-137.9,144.0],[-158.3,150.9],[-178.3,158.9],[-197.9,167.9],[-217.0,177.9],[-235.6,188.8],[-253.5,200.7],[-270.9,213.5],[-287.6,227.2],[-290.0,345.0],[-236.6,344.9]],"X_RIM":[339.0,375.0],"side":[[367.0,-344.0],[367.0,-665.0],[-367.0,-665.0],[-367.0,-344.0],[-282.2,-344.0],[-276.7,-348.5],[-265.5,-357.1],[-254.1,-365.3],[-242.5,-373.1],[-230.6,-380.6],[-218.4,-387.7],[-206.1,-394.4],[-193.5,-400.7],[-180.8,-406.6],[-167.9,-412.1],[-154.8,-417.2],[-141.5,-421.9],[-128.1,-426.2],[-114.6,-430.0],[-101.0,-433.4],[-87.2,-436.4],[-73.4,-438.9],[-59.5,-441.0],[-45.6,-442.7],[-31.6,-443.9],[-17.6,-444.7],[-3.5,-445.0],[10.5,-444.9],[24.6,-444.3],[38.6,-443.3],[52.6,-441.9],[66.5,-440.0],[80.3,-437.7],[94.1,-434.9],[107.8,-431.7],[121.4,-428.1],[134.8,-424.1],[148.2,-419.6],[161.3,-414.7],[174.3,-409.4],[187.2,-403.7],[199.8,-397.6],[212.3,-391.1],[224.5,-384.2],[236.5,-376.9],[248.3,-369.3],[259.9,-361.2],[271.1,-352.9],[282.1,-344.1],[282.2,-344.0],[367.0,-344.0]],"X_SIDE":[349.0,367.0],"L_HALF":367.0,"H_FLOOR":-665.0,"H_FRONT":326.0,"H_BACK":110.0,"Y_PAD":240.90210326743934,"H_PAD":-344.04385860137654,"Z_PIVOT":747.0,"H_FEET":40.0,"LAT":44.22,"Z_C":798.1256738114962,"Z_TB":150.0,"Z_T":168.0,"Z_B":48.0,"Z_AX":68.0,"R_ROLL":16.0,"Y_S":-250.0,"Y_N":330.0,"X_R":120.0,"BASE":[-400,400,-420,420],"TOP":[-400,400,-400,400],"PROF_S":[[-174.4,105.5],[-169.1,103.4],[-163.8,101.3],[-158.4,99.4],[-153.0,97.5],[-147.5,95.6],[-141.9,93.8],[-136.4,92.1],[-130.7,90.5],[-125.1,88.9],[-119.4,87.4],[-113.6,86.0],[-107.9,84.6],[-102.1,83.4],[-96.2,82.1],[-88.9,80.7],[-83.0,79.7],[-77.1,78.7],[-71.1,77.8],[-65.1,76.9],[-59.1,76.2],[-53.1,75.5],[-47.1,74.9],[-41.0,74.3],[-35.0,73.9],[-28.9,73.5],[-22.8,73.2],[-16.8,72.9],[-10.7,72.7],[-4.6,72.6],[3.0,72.6],[9.1,72.7],[15.2,72.9],[21.3,73.1],[27.4,73.4],[33.5,73.8],[39.5,74.2],[45.6,74.7],[51.6,75.3],[57.6,76.0],[63.6,76.7],[69.6,77.6],[75.6,78.5],[81.5,79.4],[87.4,80.5],[94.8,81.8],[100.6,83.0],[106.4,84.3],[112.2,85.7],[117.9,87.1],[123.7,88.6],[129.3,90.1],[135.0,91.7],[140.6,93.4],[146.1,95.2],[151.6,97.0],[157.1,98.9],[162.5,100.8],[167.8,102.9],[174.4,105.5]],"PROF_N":[[-250.6,111.1],[-242.6,109.1],[-234.5,107.2],[-226.4,105.3],[-218.3,103.5],[-210.1,101.7],[-201.9,100.1],[-193.7,98.5],[-185.5,96.9],[-177.2,95.4],[-168.9,94.0],[-160.6,92.7],[-152.3,91.4],[-144.0,90.2],[-135.6,89.1],[-125.1,87.7],[-116.7,86.7],[-108.3,85.8],[-99.8,85.0],[-91.4,84.2],[-82.9,83.5],[-74.4,82.9],[-66.0,82.3],[-57.5,81.8],[-49.0,81.3],[-40.5,81.0],[-31.9,80.7],[-23.4,80.5],[-14.9,80.3],[-6.4,80.2],[4.3,80.2],[12.8,80.3],[21.3,80.4],[29.8,80.6],[38.3,80.9],[46.8,81.2],[55.3,81.7],[63.8,82.1],[72.3,82.7],[80.8,83.3],[89.3,84.0],[97.7,84.8],[106.2,85.6],[114.6,86.5],[123.0,87.5],[133.5,88.8],[141.9,89.9],[150.2,91.1],[158.5,92.4],[166.9,93.7],[175.2,95.1],[183.4,96.5],[191.7,98.1],[199.9,99.7],[208.1,101.3],[216.2,103.0],[224.4,104.8],[232.5,106.7],[240.6,108.6],[250.6,111.1]],"CUP":3.0,"R_D":507.4904491735943,"FEET":[[-280,-380],[280,-380],[0,380]],"CUPS":[[0,330],[-286,-165],[286,-165]]}</script>
+<script>
+(function () {
+"use strict";
+const G = JSON.parse(document.getElementById("geom").textContent);
+const stage = document.getElementById("stage"), canvas = document.getElementById("c");
+if (!window.THREE || !THREE.OrbitControls) { fail("La libreria 3D non si è caricata. Ricarica la pagina."); return; }
+function fail(msg) { const d = document.createElement("div"); d.className = "err"; d.textContent = msg; stage.appendChild(d); }
+
+const D2R = Math.PI / 180, V3 = THREE.Vector3;
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true }); }
+catch (e) { fail("Questo browser non supporta WebGL: il modello 3D non può essere mostrato."); return; }
+const TOUCH = window.matchMedia("(pointer: coarse)").matches;
+const PR_MAX = TOUCH ? 1.5 : 2;
+let pixelRatio = Math.min(window.devicePixelRatio || 1, PR_MAX);
+renderer.setPixelRatio(pixelRatio);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0c1017);
+scene.fog = new THREE.Fog(0x0c1017, 9000, 22000);
+const camera = new THREE.PerspectiveCamera(34, 1, 20, 60000);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.maxPolarAngle = 0.495 * Math.PI; controls.minDistance = 400; controls.maxDistance = 14000;
+
+// ---------- ambiente per i riflessi (specchi, alluminio) ----------
+(function env() {
+  const es = new THREE.Scene();
+  const sg = new THREE.SphereGeometry(5000, 32, 16), cols = [];
+  const pos = sg.attributes.position, top = new THREE.Color(0x3a5b8c), hor = new THREE.Color(0xc9b79a), bot = new THREE.Color(0x15120e);
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) / 5000, c = new THREE.Color();
+    if (y > 0) c.copy(hor).lerp(top, Math.pow(y, 0.6)); else c.copy(hor).lerp(bot, Math.min(1, -y * 3));
+    cols.push(c.r, c.g, c.b);
+  }
+  sg.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
+  es.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const pm = new THREE.Mesh(new THREE.PlaneGeometry(3000, 1500), new THREE.MeshBasicMaterial({ color: 0xfff3e0 }));
+  pm.position.set(2500, 3000, 1500); pm.lookAt(0, 0, 0); es.add(pm);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(es, 0.04).texture;
+})();
+
+// ---------- luci ----------
+scene.add(new THREE.HemisphereLight(0xb8cff5, 0x2a2219, 0.45));
+const sun = new THREE.DirectionalLight(0xfff0dc, 2.0);
+sun.position.set(2600, 4800, 2200); sun.castShadow = true;
+sun.shadow.mapSize.set(TOUCH ? 1024 : 2048, TOUCH ? 1024 : 2048);
+Object.assign(sun.shadow.camera, { left: -2600, right: 2600, top: 2600, bottom: -2600, near: 500, far: 12000 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 2;
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x9db8ff, 0.6); rim.position.set(-3000, 2000, -2500); scene.add(rim);
+
+// ---------- materiali ----------
+function woodTex(base, dark, rep) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 512;
+  const g = cv.getContext("2d"); g.fillStyle = base; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 260; i++) {
+    const y = Math.random() * 512, a = 0.03 + Math.random() * 0.07;
+    g.strokeStyle = dark; g.globalAlpha = a; g.lineWidth = 0.6 + Math.random() * 2.2;
+    g.beginPath(); g.moveTo(0, y);
+    for (let x = 0; x <= 512; x += 32) g.lineTo(x, y + Math.sin(x / 70 + i) * 3 + (Math.random() - .5) * 2);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+  t.repeat.set(rep, rep); t.anisotropy = 4; return t;
+}
+const M = {
+  birch: new THREE.MeshStandardMaterial({ map: woodTex("#e9d3a8", "#a07a45", 1), roughness: 0.72 }),
+  birchX: new THREE.MeshStandardMaterial({ map: woodTex("#e9d3a8", "#a07a45", 1 / 500), roughness: 0.72 }),
+  beech: new THREE.MeshStandardMaterial({ map: woodTex("#d9a877", "#8a5a33", 1), roughness: 0.7 }),
+  beechX: new THREE.MeshStandardMaterial({ map: woodTex("#d9a877", "#8a5a33", 1 / 400), roughness: 0.7 }),
+  alu: new THREE.MeshStandardMaterial({ color: 0xc7ccd4, metalness: 0.9, roughness: 0.32 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0x8e959e, metalness: 0.85, roughness: 0.4 }),
+  black: new THREE.MeshStandardMaterial({ color: 0x17191d, roughness: 0.55 }),
+  petg: new THREE.MeshStandardMaterial({ color: 0x3b414b, roughness: 0.45 }),
+  laminate: new THREE.MeshStandardMaterial({ color: 0x1d1f22, roughness: 0.35, metalness: 0.1 }),
+  ptfe: new THREE.MeshStandardMaterial({ color: 0xf1efe9, roughness: 0.5 }),
+  mirror: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.03, envMapIntensity: 1.5 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0x9fc4b8, metalness: 0.1, roughness: 0.15, transparent: true, opacity: 0.85 }),
+  sock: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, roughness: 0.9, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }),
+  shade: new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.7, side: THREE.DoubleSide }),
+};
+
+// ---------- aiuti geometrici (coordinate locali con Z in alto) ----------
+function add(parent, geo, mat, cast = true) { const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = true; parent.add(m); return m; }
+function box(parent, x0, x1, y0, y1, z0, z1, mat) {
+  const m = add(parent, new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
+  m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); return m;
+}
+function cylZ(parent, x, y, z0, z1, r, mat, seg = 48, mats) {
+  const m = add(parent, new THREE.CylinderGeometry(r, r, z1 - z0, seg), mats || mat);
+  m.rotation.x = Math.PI / 2; m.position.set(x, y, (z0 + z1) / 2); return m;
+}
+function rod(parent, a, b, r, mat, seg = 20) {
+  const A = new V3(...a), B = new V3(...b), d = B.clone().sub(A), L = d.length();
+  const m = add(parent, new THREE.CylinderGeometry(r, r, L, seg), mat);
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new V3(0, 1, 0), d.normalize()); return m;
+}
+// poligono 2D (u, v) estruso di "depth" lungo w; u, v, w = assi locali (terna destrorsa)
+function extrude(parent, pts, depth, u, v, w, origin, mat, holes) {
+  const sh = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], p[1])));
+  (holes || []).forEach(h => sh.holes.push(h));
+  const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false, curveSegments: 64 });
+  const mtx = new THREE.Matrix4().makeBasis(new V3(...u), new V3(...v), new V3(...w)); mtx.setPosition(new V3(...origin));
+  g.applyMatrix4(mtx); return add(parent, g, mat);
+}
+function annulus(parent, z0, rO, rI, mat) {
+  const sh = new THREE.Shape(); sh.absarc(0, 0, rO, 0, Math.PI * 2, false);
+  const h = new THREE.Path(); h.absarc(0, 0, rI, 0, Math.PI * 2, true); sh.holes.push(h);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: G.T_PLY, bevelEnabled: false, curveSegments: 96 });
+  g.translate(0, 0, z0); return add(parent, g, mat);
+}
+function sectorPts(rO, rI, a0, a1, n = 80) {     // (y, z) relativi al perno, phi da -y verso -z
+  const o = [], i = [];
+  for (let k = 0; k <= n; k++) { const p = (a0 + (a1 - a0) * k / n) * D2R; o.push([-rO * Math.cos(p), -rO * Math.sin(p)]); i.push([-rI * Math.cos(p), -rI * Math.sin(p)]); }
+  return o.concat(i.reverse());
+}
+function radialBox(parent, ang, r0, r1, w, z0, z1, mat) {
+  const g = new THREE.Group(); g.rotation.z = ang * D2R; parent.add(g);
+  return box(g, r0, r1, -w / 2, w / 2, z0, z1, mat);
+}
+
+// ---------- gerarchia ----------
+// root: X est, Y nord, Z in alto (mm) -> three: Y in alto
+const root = new THREE.Group(); root.rotation.x = -Math.PI / 2; scene.add(root);
+const U = new V3(0, Math.cos(G.LAT * D2R), Math.sin(G.LAT * D2R));          // asse polare
+const polar = new THREE.Group(); polar.position.set(0, 0, G.Z_C); root.add(polar);
+const platTop = new THREE.Group(); platTop.position.set(0, 0, -G.Z_C); polar.add(platTop);
+const dob = new THREE.Group(); dob.position.z = G.Z_T + G.CUP; platTop.add(dob);
+const azg = new THREE.Group(); dob.add(azg);
+const altg = new THREE.Group(); altg.position.z = G.Z_PIVOT; azg.add(altg);
+// tubo: coordinate (x, y, z dal vertice) -> rocker: X = -x, Y = z_b - z_b perno, Z = y - y perno
+const tube = new THREE.Group(); tube.matrixAutoUpdate = false;
+tube.matrix.makeBasis(new V3(-1, 0, 0), new V3(0, 0, 1), new V3(0, 1, 0));
+tube.matrix.setPosition(new V3(0, 200 - G.PZB, -G.PY)); altg.add(tube);
+
+// ---------- pavimento ----------
+const floor = new THREE.Mesh(new THREE.CircleGeometry(9000, 96), new THREE.MeshStandardMaterial({ color: 0x0b0f16, roughness: 0.95 }));
+floor.receiveShadow = true; root.add(floor);
+const grid = new THREE.GridHelper(12000, 12, 0x2c3a50, 0x222c3c); grid.rotation.x = Math.PI / 2; grid.position.z = 0.5;
+grid.material.transparent = true; grid.material.opacity = 0.5; root.add(grid);
+
+// ---------- PIATTAFORMA: base fissa ----------
+const [bx0, bx1, by0, by1] = G.BASE;
+box(root, bx0, bx1, by0, by1, G.Z_B - 18, G.Z_B, M.birch);
+G.FEET.forEach(f => cylZ(root, f[0], f[1], 0, G.Z_B - 18, 25, M.steel, 32));
+[G.Y_S, G.Y_N].forEach(Ys => [-G.X_R, G.X_R].forEach(xr => {
+  [-1, 1].forEach(s => box(root, xr - 30, xr + 30, Ys + s * 47, Ys + s * 65, G.Z_B, G.Z_B + 60, M.beech));
+  const rl = add(root, new THREE.CylinderGeometry(G.R_ROLL, G.R_ROLL, 10, 40), M.steel); rl.position.set(xr, Ys, G.Z_AX);
+  const ax = add(root, new THREE.CylinderGeometry(6, 6, 140, 16), M.steel); ax.position.set(xr, Ys, G.Z_AX);
+}));
+rod(root, [-145, 0, 74], [105, 0, 74], 4, M.steel);                             // vite Tr8x2
+box(root, 130, 172, -21, 21, 53, 95, M.black);                                    // NEMA17
+box(root, 124, 130, -32, 32, 48, 98, M.petg);
+box(root, -160, -145, -18, 18, 48, 92, M.petg);
+box(root, 190, 310, -340, -260, G.Z_B, G.Z_B + 45, M.petg);                       // elettronica
+
+// ---------- PIATTAFORMA: piano mobile ----------
+const [tx0, tx1, ty0, ty1] = G.TOP;
+box(platTop, tx0, tx1, ty0, ty1, G.Z_TB, G.Z_T, M.birch);
+[[G.PROF_S, G.Y_S], [G.PROF_N, G.Y_N]].forEach(([P, Ys]) => {
+  const xm = P[0][0];
+  const pts = P.concat([[-xm, G.Z_TB], [xm, G.Z_TB]]);
+  extrude(platTop, pts, 54, [1, 0, 0], [0, 0, 1], [0, -1, 0], [0, Ys + 27, 0], M.beechX);
+  // piattina d'acciaio sul bordo
+  const sp = P.map(p => [p[0], p[1]]).concat(P.slice().reverse().map(p => [p[0], p[1] - 3]));
+  extrude(platTop, sp, 50, [1, 0, 0], [0, 0, 1], [0, -1, 0], [0, Ys + 25, 0], M.steel);
+});
+box(platTop, -40, 0, -20, 20, 80, G.Z_TB, M.beech);                                // blocchetto di spinta
+G.CUPS.forEach(c => { cylZ(platTop, c[0], c[1], G.Z_T, G.Z_T + 3, 42, M.petg, 40); cylZ(platTop, c[0], c[1], G.Z_T + 3, G.Z_T + 9, 31, M.petg, 40); });
+
+// ---------- DOBSON: base a terra (fissa sul piano mobile) ----------
+G.CUPS.forEach(c => cylZ(dob, c[0], c[1], 0, G.H_FEET, 25, M.black, 32));
+cylZ(dob, 0, 0, G.H_FEET, G.H_FEET + 18, 380, M.birch, 96);
+G.CUPS.forEach(c => box(dob, c[0] - 25, c[0] + 25, c[1] - 25, c[1] + 25, G.H_FEET + 18, G.H_FEET + 24, M.ptfe));
+cylZ(dob, 0, 0, G.H_FEET + 18, G.H_FEET + 60, 8, M.steel, 16);
+
+// ---------- DOBSON: rocker (ruota in azimut) ----------
+const zP = G.Z_PIVOT, zF = zP + G.H_FLOOR;                                    // fondo del rocker (faccia superiore)
+box(azg, -G.L_HALF, G.L_HALF, -G.L_HALF, G.L_HALF, zF - 18, zF, M.birch);
+const side = G.side.map(p => [p[0], p[1] + zP]);
+extrude(azg, side, 18, [0, 1, 0], [0, 0, 1], [1, 0, 0], [G.X_SIDE[0], 0, 0], M.birchX);
+extrude(azg, side, 18, [0, 1, 0], [0, 0, 1], [1, 0, 0], [-G.X_SIDE[1], 0, 0], M.birchX);
+box(azg, -G.X_SIDE[0], G.X_SIDE[0], G.L_HALF - 18, G.L_HALF, zF, zF + G.H_FRONT, M.birch);
+box(azg, -G.X_SIDE[0], G.X_SIDE[0], -G.L_HALF, -G.L_HALF + 18, zF, zF + G.H_BACK, M.birch);
+[-1, 1].forEach(sx => [-1, 1].forEach(sy => {
+  const g = new THREE.Group(); g.position.set(sx * (G.X_SIDE[0] + 9), sy * G.Y_PAD, zP + G.H_PAD); g.rotation.x = sy * 35 * D2R; azg.add(g);
+  box(g, -25, 25, -18, 18, -25, 0, M.beech); box(g, -25, 25, -18, 18, 0, 3, M.ptfe);
+}));
+
+// ---------- TUBO (coordinate x, y, z dal vertice del primario) ----------
+const zb = v => v - 200;
+const O = G.BOX_OUT, I = G.BOX_IN, H = G.BOX_H;
+const boxParts = [];
+boxParts.push(box(tube, I, O, -O, O, zb(0), zb(H), M.birch), box(tube, -O, -I, -O, O, zb(0), zb(H), M.birch));
+boxParts.push(box(tube, -I, I, I, O, zb(0), zb(H), M.birch), box(tube, -I, I, -O, -I, zb(0), zb(H), M.birch));
+box(tube, -O, O, -O, O, zb(0), zb(18), M.birch);                                  // coperchio posteriore
+[[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sy]) => {
+  box(tube, sx * 214 - 25, sx * 214 + 25, sy * 214 - 25, sy * 214 + 25, zb(250), zb(H), M.beech);   // nodi della scatola
+});
+cylZ(tube, 0, 0, -130, -112, 230, M.petg, 64);                                    // cella 18 punti (schema)
+cylZ(tube, 0, 0, -80, 0, 252, null, 96, [M.glass, M.mirror, M.glass]);            // primario Ø504
+[-110, 0, 110].forEach(x => cylZ(tube, x, -150, zb(-8), zb(0), 45, M.black, 32)); // ventole
+
+// cuscinetti di altezza + distanziali + laminato sul bordo
+[-1, 1].forEach(s => {
+  const xr = s > 0 ? G.X_RIM[0] : -G.X_RIM[1];
+  extrude(tube, G.ring, 36, [0, 1, 0], [0, 0, 1], [1, 0, 0], [xr, 0, -200], M.birchX);
+  const xs = s > 0 ? O : -G.X_RIM[0];
+  extrude(tube, G.spacer, 36, [0, 1, 0], [0, 0, 1], [1, 0, 0], [xs, 0, -200], M.birchX);
+  const lam = sectorPts(421.5, 419.5, -42, 133).map(p => [p[0] + G.PY, p[1] + G.PZB]);
+  extrude(tube, lam, 36, [0, 1, 0], [0, 0, 1], [1, 0, 0], [xr, 0, -200], M.laminate);
+});
+
+// traliccio: tubi Al Ø30 con tappi e teste a snodo
+function strut(a, b) {
+  const A = new V3(...a), B = new V3(...b), d = B.clone().sub(A).normalize();
+  const a1 = A.clone().addScaledVector(d, 63.5), b1 = B.clone().addScaledVector(d, -63.5);
+  rod(tube, a1.toArray(), b1.toArray(), 15, M.alu, 24);
+  [[A, a1], [B, b1]].forEach(([n, e]) => {
+    rod(tube, n.toArray(), e.toArray(), 5, M.steel, 12);
+    rod(tube, e.clone().addScaledVector(d.clone().multiplyScalar(n === A ? -1 : 1), 5).toArray(), e.toArray(), 16, M.black, 24);
+    const sph = add(tube, new THREE.SphereGeometry(8, 16, 12), M.steel); sph.position.copy(n);
+  });
+}
+G.low.forEach(([a, b]) => strut(a, b));
+G.up.forEach(([a, b]) => strut(a, b));
+
+// anello intermedio
+annulus(tube, G.A1[0], G.R_OUT, G.R_IN, M.birchX); annulus(tube, G.A2[0], G.R_OUT, G.R_IN, M.birchX);
+[45, 135, 225, 315].forEach(a => radialBox(tube, a, G.R_IN, G.R_IN + G.POST_D, G.POST_W, G.A1[1], G.A2[0], M.beech));
+[0, 90, 180, 270].forEach(a => radialBox(tube, a, G.R_IN - 10, G.R_OUT, 50, G.A1[1], G.A1[1] + 50, M.beech));
+box(tube, G.R_IN, G.R_IN + 18, -70, 70, G.A1[1], G.A2[0], M.birch);                     // pannello del focheggiatore
+// focheggiatore Crayford 2" + oculare (asse lungo +x a z 1180)
+function cylX(x0, x1, y, z, r, mat, seg = 40) { const m = add(tube, new THREE.CylinderGeometry(r, r, x1 - x0, seg), mat); m.rotation.z = -Math.PI / 2; m.position.set((x0 + x1) / 2, y, z); return m; }
+box(tube, G.R_IN + 18, G.R_IN + 30, -46, 46, G.Z_TER - 46, G.Z_TER + 46, M.petg);
+box(tube, G.R_IN + 30, G.R_IN + 68, -40, 40, G.Z_TER - 40, G.Z_TER + 40, M.black);
+cylX(G.R_IN, G.R_IN + 110, 0, G.Z_TER, 28.5, M.steel);
+[-1, 1].forEach(s => { const k = add(tube, new THREE.CylinderGeometry(16, 16, 14, 24), M.black); k.position.set(G.R_IN + 50, s * 52, G.Z_TER - 22); });
+cylX(G.R_IN + 110, G.R_IN + 190, 0, G.Z_TER, 26, M.black);
+cylX(G.R_IN + 190, G.R_IN + 205, 0, G.Z_TER, 22, M.black);
+const eyeMark = new THREE.Object3D(); eyeMark.position.set(G.R_IN + 205, 0, G.Z_TER); tube.add(eyeMark);
+// terziario ellittico a 45° (normale (1,0,1)/√2) con supporto e crociera
+const terG = new THREE.CylinderGeometry(50, 50, 24, 64); terG.scale(141 / 100, 1, 1);
+const ter = add(tube, terG, [M.petg, M.mirror, M.petg]);
+ter.matrixAutoUpdate = false;
+ter.matrix.makeBasis(new V3(Math.SQRT1_2, 0, -Math.SQRT1_2), new V3(Math.SQRT1_2, 0, Math.SQRT1_2), new V3(0, -1, 0));
+ter.matrix.setPosition(new V3(-12 * Math.SQRT1_2, 0, G.Z_TER - 12 * Math.SQRT1_2));
+cylZ(tube, 0, 0, G.Z_VANE_T - 15, G.Z_TER - 50, 24, M.petg, 32);
+[45, 135, 225, 315].forEach(a => radialBox(tube, a, 24, G.R_IN, 1.5, G.Z_VANE_T - 12.5, G.Z_VANE_T + 12.5, M.steel));
+
+// anello superiore, secondario, paraluce
+annulus(tube, G.B1[0], G.R_OUT, G.R_IN, M.birchX); annulus(tube, G.B2[0], G.R_OUT, G.R_IN, M.birchX);
+[45, 135, 225, 315].forEach(a => radialBox(tube, a, G.R_IN, G.R_IN + G.POST_D, G.POST_W, G.B1[1], G.B2[0], M.beech));
+[0, 90, 180, 270].forEach(a => radialBox(tube, a, G.R_IN - 10, G.R_OUT, 50, G.B1[1], G.B1[1] + 50, M.beech));
+cylZ(tube, 0, 0, G.Z_SEC, G.Z_SEC + 32, 100, null, 96, [M.glass, M.glass, M.mirror]);   // faccia riflettente verso il basso
+cylZ(tube, 0, 0, G.Z_SEC + 32, G.Z_SEC + 45, 104, M.petg, 64);
+cylZ(tube, 0, 0, G.Z_SEC + 45, G.Z_VANE_S + 15, 26, M.petg, 32);
+[45, 135, 225, 315].forEach(a => radialBox(tube, a, 26, G.R_IN, 1.5, G.Z_VANE_S - 12.5, G.Z_VANE_S + 12.5, M.steel));
+const shade = add(tube, new THREE.CylinderGeometry(G.R_OUT + 1.5, G.R_OUT + 1.5, G.Z_SHADE[1] - G.Z_SHADE[0], 96, 1, true), M.shade);
+shade.rotation.x = Math.PI / 2; shade.position.z = (G.Z_SHADE[0] + G.Z_SHADE[1]) / 2;
+const topMark = new THREE.Object3D(); topMark.position.set(0, 0, G.Z_SHADE[1]); tube.add(topMark);
+// telo del traliccio
+const sock = new THREE.Group(); tube.add(sock);
+[[zb(H), G.A1[0], 364], [G.A2[1], G.B1[0], 364]].forEach(([z0, z1, r]) => {
+  const m = add(sock, new THREE.CylinderGeometry(r, r, z1 - z0, 96, 1, true), M.sock, false);
+  m.rotation.x = Math.PI / 2; m.position.z = (z0 + z1) / 2;
+});
+sock.visible = false;
+
+// ---------- asse polare, stella e traccia ----------
+const accent = 0xff5d4f, brass = 0xe0aa5a;
+const axisGrp = new THREE.Group(); root.add(axisGrp);
+const yG = -G.Z_C / Math.tan(G.LAT * D2R);
+const axPts = [new V3(0, yG, 0), new V3(0, 0, G.Z_C).addScaledVector(U, 2600)];
+rod(axisGrp, axPts[0].toArray(), axPts[1].toArray(), 7, new THREE.MeshStandardMaterial({ color: brass, metalness: 0.8, roughness: 0.3, emissive: 0x3a2508 }), 16);
+const cg = new THREE.Mesh(new THREE.SphereGeometry(22, 24, 16), new THREE.MeshStandardMaterial({ color: accent, emissive: 0x5a120c, roughness: 0.4 }));
+cg.position.set(0, 0, G.Z_C); axisGrp.add(cg);
+function glowTex(c) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 128; const g = cv.getContext("2d");
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.2, c); gr.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(cv);
+}
+function label(text, color) {
+  const cv = document.createElement("canvas"); cv.width = 512; cv.height = 96; const g = cv.getContext("2d");
+  g.font = "500 40px Inter, Segoe UI, sans-serif"; g.fillStyle = color; g.textBaseline = "middle"; g.fillText(text, 8, 48);
+  const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.scale.set(1100, 206, 1); s.center.set(0, 0.5); return s;
+}
+const polLab = label("verso la Stella Polare", "#e0aa5a"); polLab.position.copy(axPts[1]); axisGrp.add(polLab);
+const cgLab = label("baricentro del Dobson", "#ff8a7f"); cgLab.position.set(60, 0, G.Z_C + 40); cgLab.scale.multiplyScalar(0.55); axisGrp.add(cgLab);
+const star = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex("rgba(255,236,190,0.9)"), depthWrite: false, transparent: true }));
+star.scale.set(260, 260, 1); axisGrp.add(star);
+const sight = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(), new V3()]), new THREE.LineDashedMaterial({ color: 0xffe2a8, dashSize: 60, gapSize: 50, transparent: true, opacity: 0.6 }));
+axisGrp.add(sight);
+const trail = new THREE.Line(new THREE.BufferGeometry().setFromPoints(new Array(61).fill(0).map(() => new V3())), new THREE.LineBasicMaterial({ color: accent }));
+axisGrp.add(trail);
+
+// ---------- stato e aggiornamento ----------
+const S = { alt: 40, az: 180, t: 30, playing: false };
+const SID = 360 / 1436.0682;                     // gradi per minuto di tempo
+const theta = t => -(t - 30) * SID;               // t = 0 a est (+7,5°), t = 60 a ovest (-7,5°)
+const C0 = new V3(0, 0, G.Z_C);
+function rotAbout(p, ang) { return p.clone().sub(C0).applyAxisAngle(U, ang).add(C0); }
+const $ = id => document.getElementById(id);
+const fmt = (v, n = 2) => v.toFixed(n).replace(".", ",");
+const azName = a => ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"][Math.round(((a % 360) + 360) % 360 / 45) % 8];
+
+function update() {
+  altg.rotation.x = S.alt * D2R;
+  azg.rotation.z = -S.az * D2R;                      // azimut da nord verso est; 180 = sud (-Y)
+  polar.quaternion.setFromAxisAngle(U, theta(S.t) * D2R);
+  scene.updateMatrixWorld(true);
+  const eye = eyeMark.getWorldPosition(new V3());
+  $("hEye").textContent = fmt(eye.y / 1000) + " m";
+  const th = theta(S.t);
+  $("hTrack").textContent = `${Math.round(S.t)} min · ${th >= 0 ? "+" : "−"}${fmt(Math.abs(th), 1)}°`;
+  $("altV").textContent = S.alt + "°"; $("azV").textContent = `${S.az}° (${azName(S.az)})`;
+  $("tmV").textContent = fmt(S.t, S.t % 1 ? 1 : 0) + " min";
+  // stella sull'asse del tubo, 4 m oltre la bocca; traccia sull'ora intera
+  const topW = topMark.getWorldPosition(new V3()), dirW = new V3(0, 0, 1).transformDirection(tube.matrixWorld);
+  const starW = topW.clone().addScaledVector(dirW, 4000);
+  const toL = w => root.worldToLocal(w.clone());
+  const sL = toL(starW), tL = toL(topW);
+  star.position.copy(sL);
+  sight.geometry.setFromPoints([tL, sL]); sight.computeLineDistances();
+  const pts = [];
+  for (let k = 0; k <= 60; k++) pts.push(rotAbout(sL, (theta(k) - th) * D2R));
+  trail.geometry.setFromPoints(pts);
+}
+
+// ---------- comandi ----------
+$("alt").addEventListener("input", e => { S.alt = +e.target.value; update(); });
+$("az").addEventListener("input", e => { S.az = +e.target.value; update(); });
+$("tm").addEventListener("input", e => { S.t = +e.target.value; stop(); update(); });
+function stop() { S.playing = false; $("play").textContent = "Simula un'ora"; }
+$("play").addEventListener("click", () => {
+  if (S.playing) { stop(); return; }
+  if (S.t >= 60) S.t = 0;
+  S.playing = true; $("play").textContent = "Pausa";
+});
+$("reset").addEventListener("click", () => { stop(); S.t = 0; $("tm").value = 0; update(); });
+$("tAxis").addEventListener("change", e => { axisGrp.visible = e.target.checked; });
+$("tSock").addEventListener("change", e => { sock.visible = e.target.checked; });
+$("tCut").addEventListener("change", e => { boxParts.slice(1, 3).forEach(m => m.visible = !e.target.checked); });
+
+const views = {
+  tutto:   { p: [3900, 1650, -1500], t: [0, 950, -300] },
+  oculare: { p: [2300, 1450, -200], t: [300, 1150, 600] },
+  ottica:  { p: [-900, 3900, 3900], t: [0, 1350, 500] },
+  piatt:   { p: [-1900, 700, 1600], t: [0, 200, 0] },
+  est:     { p: [5200, 1100, 0], t: [0, 1000, 0] },
+};
+let flight = null;
+function viewOf(name) {
+  if (name === "oculare") {                       // inquadra l'oculare dov'e' adesso
+    const e = eyeMark.getWorldPosition(new V3());
+    return { p: [e.x + 1500, e.y + 250, e.z - 900], t: [e.x - 150, e.y - 150, e.z + 100] };
+  }
+  return views[name];
+}
+function go(name) {
+  const v = viewOf(name);
+  flight = { p0: camera.position.clone(), t0: controls.target.clone(), p1: new V3(...v.p), t1: new V3(...v.t), k: 0 };
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) flight.k = 1;
+}
+document.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", () => go(b.dataset.v)));
+let hiRes = false;
+$("hq").addEventListener("click", e => {
+  const hi = hiRes = !hiRes;
+  pixelRatio = hi ? Math.min((window.devicePixelRatio || 1) * 2, TOUCH ? 2 : 3) : Math.min(window.devicePixelRatio || 1, PR_MAX);
+  const sm = TOUCH ? (hi ? 2048 : 1024) : (hi ? 4096 : 2048); sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  renderer.setPixelRatio(pixelRatio); resize();
+  e.target.textContent = hi ? "Risoluzione normale" : "Alta risoluzione";
+});
+$("fs").addEventListener("click", () => { try { const p = stage.requestFullscreen && stage.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) {} });
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  // in verticale si allarga il campo, cosi' il telescopio resta intero
+  camera.fov = camera.aspect >= 1.2 ? 34 : Math.min(70, 2 * Math.atan(Math.tan(17 * D2R) * 1.4 / camera.aspect) / D2R);
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+if (TOUCH) $("hint").textContent = "Un dito ruota · due dita ingrandiscono";
+if (!stage.requestFullscreen) $("fs").hidden = true;
+
+// #oculare, #piatt ... apre quella vista; #foto-<vista> la mostra senza pannelli (per le immagini fisse)
+let h0 = (location.hash || "").slice(1), v0 = "tutto";
+if (h0.indexOf("foto-") === 0) { document.documentElement.classList.add("foto"); h0 = h0.slice(5); }
+if (views[h0]) v0 = h0;
+if (stage.clientWidth < stage.clientHeight) views.tutto = { p: [4300, 1900, -700], t: [0, 1150, 450] };   // telefono in verticale
+camera.position.set(...views.tutto.p); controls.target.set(...views.tutto.t);
+resize(); update();
+if (v0 !== "tutto") { const v = viewOf(v0); camera.position.set(...v.p); controls.target.set(...v.t); }
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.max(0, Math.min(0.1, ((now || 0) - last) / 1000)); last = now || last;
+  if (S.playing) {
+    S.t = Math.min(60, S.t + dt * 3);               // 1 ora in 20 s
+    $("tm").value = S.t; if (S.t >= 60) stop(); update();
+  }
+  if (flight) {
+    flight.k = Math.min(1, flight.k + dt / 1.1); const e = 1 - Math.pow(1 - flight.k, 3);
+    camera.position.lerpVectors(flight.p0, flight.p1, e); controls.target.lerpVectors(flight.t0, flight.t1, e);
+    if (flight.k >= 1) flight = null;
+  }
+  controls.update(); renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
